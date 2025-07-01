@@ -572,10 +572,11 @@ async function loadData() {
     }
 }
 
-// Processar dados - versão com tratamento de erro
+// Processar dados - versão com debug detalhado
 function processData() {
     try {
-        console.log('Iniciando processamento de dados. Total de itens:', allData.length);
+        console.log('=== INICIANDO PROCESSAMENTO DE DADOS ===');
+        console.log('Total de itens brutos:', allData.length);
         
         sdrData = {};
         
@@ -584,12 +585,15 @@ function processData() {
             return;
         }
         
+        // Debug: mostrar alguns itens brutos
+        console.log('Primeiros 3 itens brutos:', allData.slice(0, 3));
+        
         // Primeiro, agrupar todos os dados por sessionId
         const sessionGroups = {};
         allData.forEach((item, index) => {
             try {
                 if (!item || !item.data || !item.data.sessionId) {
-                    console.warn(`Item ${index} inválido:`, item);
+                    console.warn(`Item ${index} inválido ou sem sessionId:`, item);
                     return;
                 }
                 
@@ -603,11 +607,15 @@ function processData() {
             }
         });
         
-        console.log('Sessions agrupadas:', Object.keys(sessionGroups).length);
+        console.log('Sessions agrupadas:', Object.keys(sessionGroups));
+        console.log('Total de sessions:', Object.keys(sessionGroups).length);
         
         // Processar cada sessão
         Object.entries(sessionGroups).forEach(([sessionId, items]) => {
             try {
+                console.log(`\n--- Processando sessão: ${sessionId} ---`);
+                console.log(`Itens na sessão: ${items.length}`);
+                
                 sdrData[sessionId] = {
                     sessionId: sessionId,
                     sdrName: '',
@@ -628,11 +636,27 @@ function processData() {
                 const completedItems = items.filter(item => item.type === 'training_completed');
                 const pausedItems = items.filter(item => item.type === 'session_pause');
                 
+                console.log('Tipos de itens encontrados:', {
+                    sessionStart: !!sessionStart,
+                    answers: answers.length,
+                    progressItems: progressItems.length,
+                    completedItems: completedItems.length,
+                    pausedItems: pausedItems.length
+                });
+                
                 // Processar dados da sessão
                 if (sessionStart && sessionStart.data) {
-                    session.sdrName = sessionStart.data.sdrName || 'Nome não informado';
-                    session.sdrEmail = sessionStart.data.sdrEmail || 'Email não informado';
+                    session.sdrName = sessionStart.data.sdrName || '';
+                    session.sdrEmail = sessionStart.data.sdrEmail || '';
                     session.startTime = sessionStart.data.startTime;
+                    
+                    console.log('Dados da sessão extraídos:', {
+                        nome: session.sdrName,
+                        email: session.sdrEmail,
+                        startTime: session.startTime
+                    });
+                } else {
+                    console.warn('Session start não encontrado ou inválido para:', sessionId);
                 }
                 
                 // Processar progresso (pegar o mais recente)
@@ -646,6 +670,7 @@ function processData() {
                     if (latestProgress && latestProgress.data) {
                         session.progress = latestProgress.data.progress || 0;
                         session.completedModules = latestProgress.data.completedModules || 0;
+                        console.log('Progresso extraído:', session.progress + '%');
                     }
                 }
                 
@@ -656,18 +681,27 @@ function processData() {
                     session.status = 'pausado';
                 }
                 
+                console.log('Status da sessão:', session.status);
+                
                 // Processar respostas - pegar apenas a mais recente de cada pergunta
+                console.log(`Processando ${answers.length} respostas...`);
                 const uniqueAnswers = {};
-                answers.forEach(item => {
+                
+                answers.forEach((item, answerIndex) => {
                     try {
                         if (!item.data || 
                             item.data.moduleNumber === undefined || 
                             item.data.questionIndex === undefined) {
+                            console.warn(`Resposta ${answerIndex} inválida:`, item);
                             return;
                         }
                         
                         const key = `${item.data.moduleNumber}_${item.data.questionIndex}`;
                         const timestamp = new Date(item.data.timestamp?.seconds * 1000 || item.data.timestamp || 0);
+                        
+                        console.log(`Resposta ${answerIndex}: Módulo ${item.data.moduleNumber}, Pergunta ${item.data.questionIndex}, Key: ${key}`);
+                        console.log(`Pergunta: ${item.data.question}`);
+                        console.log(`Resposta: ${item.data.answer?.substring(0, 100)}...`);
                         
                         if (!uniqueAnswers[key] || timestamp > uniqueAnswers[key].timestamp) {
                             uniqueAnswers[key] = {
@@ -679,11 +713,17 @@ function processData() {
                                 timestamp: timestamp,
                                 characterCount: item.data.characterCount || item.data.answer?.length || 0
                             };
+                            console.log(`✓ Resposta única adicionada para key: ${key}`);
+                        } else {
+                            console.log(`⚠ Resposta duplicada ignorada para key: ${key}`);
                         }
                     } catch (answerError) {
-                        console.error('Erro ao processar resposta:', answerError, item);
+                        console.error(`Erro ao processar resposta ${answerIndex}:`, answerError, item);
                     }
                 });
+                
+                console.log('Respostas únicas encontradas:', Object.keys(uniqueAnswers).length);
+                console.log('Keys das respostas:', Object.keys(uniqueAnswers));
                 
                 // Organizar respostas por módulo
                 Object.values(uniqueAnswers).forEach(answer => {
@@ -692,6 +732,7 @@ function processData() {
                             title: answer.moduleTitle,
                             answers: []
                         };
+                        console.log(`Criado módulo ${answer.moduleNumber}: ${answer.moduleTitle}`);
                     }
                     
                     session.modules[answer.moduleNumber].answers.push({
@@ -704,10 +745,25 @@ function processData() {
                 });
                 
                 // Ordenar respostas por questionIndex em cada módulo
-                Object.values(session.modules).forEach(module => {
+                Object.entries(session.modules).forEach(([moduleNum, module]) => {
                     if (module.answers && Array.isArray(module.answers)) {
                         module.answers.sort((a, b) => (a.questionIndex || 0) - (b.questionIndex || 0));
+                        console.log(`Módulo ${moduleNum} ordenado: ${module.answers.length} respostas`);
                     }
+                });
+                
+                // Contar total de respostas para esta sessão
+                const totalAnswers = Object.values(session.modules).reduce((total, module) => {
+                    return total + (module.answers ? module.answers.length : 0);
+                }, 0);
+                
+                console.log(`Sessão ${sessionId} processada:`, {
+                    nome: session.sdrName,
+                    email: session.sdrEmail,
+                    status: session.status,
+                    progress: session.progress,
+                    totalModulos: Object.keys(session.modules).length,
+                    totalRespostas: totalAnswers
                 });
                 
             } catch (sessionError) {
@@ -715,8 +771,15 @@ function processData() {
             }
         });
         
-        console.log('Processamento concluído. Sessions processadas:', Object.keys(sdrData).length);
-        console.log('Dados finais:', sdrData);
+        console.log('=== PROCESSAMENTO CONCLUÍDO ===');
+        console.log('Total de sessões processadas:', Object.keys(sdrData).length);
+        console.log('Resumo das sessões:');
+        Object.entries(sdrData).forEach(([sessionId, session]) => {
+            const totalAnswers = Object.values(session.modules).reduce((total, module) => {
+                return total + (module.answers ? module.answers.length : 0);
+            }, 0);
+            console.log(`- ${session.sdrName || 'Sem nome'} (${session.sdrEmail || 'Sem email'}): ${totalAnswers} respostas`);
+        });
         
     } catch (error) {
         console.error('Erro crítico no processamento de dados:', error);
@@ -724,19 +787,66 @@ function processData() {
     }
 }
 
-// Renderizar lista de SDRs
+// Renderizar lista de SDRs - versão com debug melhorado
 function renderSDRList() {
     const sdrListEl = document.getElementById('sdrList');
     const sessions = Object.values(sdrData);
+    
+    console.log('=== RENDERIZAR LISTA DE SDRs ===');
+    console.log('Total de sessões:', sessions.length);
+    console.log('Dados completos das sessões:', sessions);
     
     if (sessions.length === 0) {
         sdrListEl.innerHTML = '<div class="no-data">Nenhum dado encontrado</div>';
         return;
     }
     
-    const html = sessions.map(session => {
-        const initials = session.sdrName.split(' ').map(n => n[0]).join('').toUpperCase();
-        const startDate = session.startTime ? new Date(session.startTime.seconds ? session.startTime.seconds * 1000 : session.startTime).toLocaleString('pt-BR') : 'N/A';
+    const html = sessions.map((session, index) => {
+        console.log(`--- Sessão ${index + 1} ---`);
+        console.log('Session ID:', session.sessionId);
+        console.log('Nome:', session.sdrName);
+        console.log('Email:', session.sdrEmail);
+        console.log('Start Time:', session.startTime);
+        console.log('Módulos:', session.modules);
+        console.log('Progress:', session.progress);
+        console.log('Status:', session.status);
+        
+        // Verificar se temos nome válido
+        const sdrName = session.sdrName && session.sdrName !== '' ? session.sdrName : 'Nome não disponível';
+        const sdrEmail = session.sdrEmail && session.sdrEmail !== '' ? session.sdrEmail : 'Email não disponível';
+        
+        // Criar iniciais de forma mais segura
+        let initials = 'NA';
+        if (sdrName && sdrName !== 'Nome não disponível') {
+            const nameParts = sdrName.split(' ').filter(part => part.length > 0);
+            if (nameParts.length > 0) {
+                initials = nameParts.map(n => n[0]).join('').toUpperCase().substring(0, 2);
+            }
+        }
+        
+        // Formatar data de início
+        let startDate = 'N/A';
+        if (session.startTime) {
+            try {
+                if (session.startTime.seconds) {
+                    startDate = new Date(session.startTime.seconds * 1000).toLocaleString('pt-BR');
+                } else if (session.startTime instanceof Date) {
+                    startDate = session.startTime.toLocaleString('pt-BR');
+                } else {
+                    startDate = new Date(session.startTime).toLocaleString('pt-BR');
+                }
+            } catch (e) {
+                console.error('Erro ao formatar data:', e, session.startTime);
+                startDate = 'Data inválida';
+            }
+        }
+        
+        // Contar respostas reais
+        const totalRespostas = Object.values(session.modules).reduce((total, module) => {
+            return total + (module.answers ? module.answers.length : 0);
+        }, 0);
+        
+        console.log(`Total de respostas para ${sdrName}:`, totalRespostas);
         
         return `
             <div class="sdr-item" data-session="${session.sessionId}">
@@ -744,18 +854,18 @@ function renderSDRList() {
                     <div class="sdr-info" onclick="toggleAnswers('${session.sessionId}')">
                         <div class="sdr-avatar">${initials}</div>
                         <div class="sdr-details">
-                            <h3>${session.sdrName}</h3>
+                            <h3>${sdrName}</h3>
                             <div class="sdr-meta">
-                                ${session.sdrEmail} • Iniciado em: ${startDate}
+                                ${sdrEmail} • Iniciado em: ${startDate} • ${totalRespostas} respostas
                             </div>
                         </div>
                     </div>
                     <div class="sdr-progress">
-                        <div class="progress-circle" style="background: conic-gradient(#38a169 ${session.progress * 3.6}deg, #e2e8f0 ${session.progress * 3.6}deg)">
-                            ${session.progress}%
+                        <div class="progress-circle" style="background: conic-gradient(#38a169 ${(session.progress || 0) * 3.6}deg, #e2e8f0 ${(session.progress || 0) * 3.6}deg)">
+                            ${session.progress || 0}%
                         </div>
                         <div class="status-badge status-${session.status === 'concluído' ? 'completed' : session.status === 'pausado' ? 'paused' : 'active'}">
-                            ${session.status}
+                            ${session.status || 'ativo'}
                         </div>
                         <button class="btn delete-btn" data-session="${session.sessionId}" 
                                 style="background: #dc2626; padding: 8px 12px; font-size: 12px; margin-left: 10px;">
@@ -782,6 +892,8 @@ function renderSDRList() {
             openDeleteModal(sessionId);
         });
     });
+    
+    console.log('=== RENDERIZAÇÃO CONCLUÍDA ===');
 }
 
 // Renderizar respostas - versão corrigida
