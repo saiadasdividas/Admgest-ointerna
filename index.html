@@ -496,7 +496,7 @@ const db = firebase.firestore();
 // Variáveis globais
 let allData = [];
 let sdrData = {};
-const ADMIN_PASSWORD = "Conceito2024@"; // Altere para sua senha
+const ADMIN_PASSWORD = "admin123"; // Altere para sua senha
 
 // Login Admin
 function loginAdmin() {
@@ -644,6 +644,10 @@ function renderSDRList() {
                         <div class="status-badge status-${session.status === 'concluído' ? 'completed' : session.status === 'pausado' ? 'paused' : 'active'}">
                             ${session.status}
                         </div>
+                        <button class="btn" onclick="event.stopPropagation(); openDeleteModal('${session.sessionId}')" 
+                                style="background: #dc2626; padding: 8px 12px; font-size: 12px; margin-left: 10px;">
+                            🗑️ Excluir
+                        </button>
                         <button class="expand-btn">▼</button>
                     </div>
                 </div>
@@ -778,6 +782,133 @@ setInterval(() => {
         loadData();
     }
 }, 30000);
+
+// Variáveis para exclusão
+let sessionToDelete = null;
+
+// Abrir modal de exclusão
+function openDeleteModal(sessionId) {
+    const session = sdrData[sessionId];
+    if (!session) return;
+    
+    sessionToDelete = sessionId;
+    document.getElementById('deleteSDRName').textContent = session.sdrName;
+    document.getElementById('deleteSDREmail').textContent = session.sdrEmail;
+    document.getElementById('deleteModal').style.display = 'block';
+}
+
+// Fechar modal de exclusão
+function closeDeleteModal() {
+    document.getElementById('deleteModal').style.display = 'none';
+    sessionToDelete = null;
+}
+
+// Confirmar exclusão
+async function confirmDelete() {
+    if (!sessionToDelete) return;
+    
+    try {
+        // Mostrar loading
+        const deleteBtn = document.querySelector('#deleteModal .btn[onclick="confirmDelete()"]');
+        const originalText = deleteBtn.textContent;
+        deleteBtn.textContent = 'Excluindo...';
+        deleteBtn.disabled = true;
+        
+        // Buscar todos os documentos relacionados à sessão
+        console.log('Buscando documentos para sessionId:', sessionToDelete);
+        const snapshot = await db.collection('sdr_training')
+            .where('data.sessionId', '==', sessionToDelete)
+            .get();
+        
+        console.log('Documentos encontrados:', snapshot.size);
+        
+        // Excluir todos os documentos em lote
+        const batch = db.batch();
+        snapshot.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+        
+        await batch.commit();
+        
+        // Atualizar interface
+        delete sdrData[sessionToDelete];
+        renderSDRList();
+        updateStats();
+        
+        // Fechar modal
+        closeDeleteModal();
+        
+        // Resetar botão
+        deleteBtn.textContent = originalText;
+        deleteBtn.disabled = false;
+        
+        alert('✅ Treinamento excluído com sucesso!');
+        
+    } catch (error) {
+        console.error('Erro ao excluir treinamento:', error);
+        alert('❌ Erro ao excluir treinamento. Tente novamente.');
+        
+        // Resetar botão em caso de erro
+        const deleteBtn = document.querySelector('#deleteModal .btn[onclick="confirmDelete()"]');
+        deleteBtn.textContent = 'Excluir Treinamento';
+        deleteBtn.disabled = false;
+    }
+}
+
+// Função para limpar todos os dados de teste (botão adicional)
+async function clearAllTestData() {
+    const confirm1 = confirm('⚠️ ATENÇÃO: Esta ação irá excluir TODOS os treinamentos!\n\nTem certeza absoluta que deseja continuar?');
+    if (!confirm1) return;
+    
+    const confirm2 = confirm('🚨 ÚLTIMA CHANCE: Todos os dados serão perdidos permanentemente!\n\nConfirma a exclusão completa?');
+    if (!confirm2) return;
+    
+    try {
+        // Buscar todos os documentos
+        const snapshot = await db.collection('sdr_training').get();
+        
+        if (snapshot.empty) {
+            alert('Nenhum dado encontrado para excluir.');
+            return;
+        }
+        
+        // Excluir em lotes de 500 (limite do Firestore)
+        const batchSize = 500;
+        const batches = [];
+        let currentBatch = db.batch();
+        let currentBatchSize = 0;
+        
+        snapshot.forEach(doc => {
+            currentBatch.delete(doc.ref);
+            currentBatchSize++;
+            
+            if (currentBatchSize === batchSize) {
+                batches.push(currentBatch);
+                currentBatch = db.batch();
+                currentBatchSize = 0;
+            }
+        });
+        
+        // Adicionar o último lote se não estiver vazio
+        if (currentBatchSize > 0) {
+            batches.push(currentBatch);
+        }
+        
+        // Executar todos os lotes
+        await Promise.all(batches.map(batch => batch.commit()));
+        
+        // Limpar dados locais e interface
+        sdrData = {};
+        renderSDRList();
+        updateStats();
+        
+        alert(`✅ Todos os ${snapshot.size} registros foram excluídos com sucesso!`);
+        
+    } catch (error) {
+        console.error('Erro ao limpar dados:', error);
+        alert('❌ Erro ao limpar dados. Tente novamente.');
+    }
+}
 </script>
 </body>
 </html>
