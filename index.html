@@ -802,7 +802,7 @@ setInterval(() => {
 // Variáveis para exclusão
 let sessionToDelete = null;
 
-// Abrir modal de exclusão
+// Abrir modal de exclusão - versão simplificada
 function openDeleteModal(sessionId) {
     console.log('openDeleteModal chamada com sessionId:', sessionId);
     const session = sdrData[sessionId];
@@ -812,68 +812,87 @@ function openDeleteModal(sessionId) {
         return;
     }
     
-    sessionToDelete = sessionId;
-    document.getElementById('deleteSDRName').textContent = session.sdrName;
-    document.getElementById('deleteSDREmail').textContent = session.sdrEmail;
-    document.getElementById('deleteModal').style.display = 'block';
-    console.log('Modal de exclusão aberto para:', session.sdrName);
-}
-
-// Fechar modal de exclusão
-function closeDeleteModal() {
-    document.getElementById('deleteModal').style.display = 'none';
-    sessionToDelete = null;
-}
-
-// Confirmar exclusão
-async function confirmDelete() {
-    if (!sessionToDelete) return;
+    // Usar confirm simples ao invés de modal customizado
+    const confirmMessage = `⚠️ CONFIRMAR EXCLUSÃO\n\nTem certeza que deseja excluir o treinamento de:\n\n👤 ${session.sdrName}\n📧 ${session.sdrEmail}\n\n⚠️ Esta ação não pode ser desfeita!\nTodos os dados serão removidos permanentemente.`;
     
+    if (confirm(confirmMessage)) {
+        console.log('Usuário confirmou exclusão');
+        deleteTraining(sessionId);
+    } else {
+        console.log('Usuário cancelou exclusão');
+    }
+}
+
+// Função para excluir treinamento
+async function deleteTraining(sessionId) {
     try {
-        // Mostrar loading
-        const deleteBtn = document.querySelector('#deleteModal .btn[onclick="confirmDelete()"]');
-        const originalText = deleteBtn.textContent;
-        deleteBtn.textContent = 'Excluindo...';
-        deleteBtn.disabled = true;
+        console.log('Iniciando exclusão para sessionId:', sessionId);
+        
+        // Mostrar feedback visual
+        const deleteBtn = document.querySelector(`[data-session="${sessionId}"] .delete-btn`);
+        if (deleteBtn) {
+            deleteBtn.textContent = '🔄 Excluindo...';
+            deleteBtn.disabled = true;
+        }
         
         // Buscar todos os documentos relacionados à sessão
-        console.log('Buscando documentos para sessionId:', sessionToDelete);
+        console.log('Buscando documentos para sessionId:', sessionId);
         const snapshot = await db.collection('sdr_training')
-            .where('data.sessionId', '==', sessionToDelete)
+            .where('data.sessionId', '==', sessionId)
             .get();
         
         console.log('Documentos encontrados:', snapshot.size);
         
+        if (snapshot.empty) {
+            alert('Nenhum documento encontrado para excluir.');
+            return;
+        }
+        
         // Excluir todos os documentos em lote
         const batch = db.batch();
         snapshot.forEach(doc => {
+            console.log('Adicionando documento ao lote de exclusão:', doc.id);
             batch.delete(doc.ref);
         });
         
+        console.log('Executando exclusão em lote...');
         await batch.commit();
+        console.log('Exclusão concluída com sucesso');
         
         // Atualizar interface
-        delete sdrData[sessionToDelete];
+        delete sdrData[sessionId];
         renderSDRList();
         updateStats();
-        
-        // Fechar modal
-        closeDeleteModal();
-        
-        // Resetar botão
-        deleteBtn.textContent = originalText;
-        deleteBtn.disabled = false;
         
         alert('✅ Treinamento excluído com sucesso!');
         
     } catch (error) {
         console.error('Erro ao excluir treinamento:', error);
-        alert('❌ Erro ao excluir treinamento. Tente novamente.');
+        alert('❌ Erro ao excluir treinamento: ' + error.message);
         
         // Resetar botão em caso de erro
-        const deleteBtn = document.querySelector('#deleteModal .btn[onclick="confirmDelete()"]');
-        deleteBtn.textContent = 'Excluir Treinamento';
-        deleteBtn.disabled = false;
+        const deleteBtn = document.querySelector(`[data-session="${sessionId}"] .delete-btn`);
+        if (deleteBtn) {
+            deleteBtn.textContent = '🗑️ Excluir';
+            deleteBtn.disabled = false;
+        }
+    }
+}
+
+// Fechar modal de exclusão (manter para compatibilidade)
+function closeDeleteModal() {
+    const modal = document.getElementById('deleteModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    sessionToDelete = null;
+}
+
+// Confirmar exclusão (manter para compatibilidade)
+function confirmDelete() {
+    if (sessionToDelete) {
+        deleteTraining(sessionToDelete);
+        closeDeleteModal();
     }
 }
 
