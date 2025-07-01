@@ -230,128 +230,45 @@ color: #742a2a;
 }
 
 .sdr-answers {
-padding: 0 20px 20px;
+padding: 20px;
 display: none;
-max-height: none;
-overflow: visible;
+background: #f8fafc;
+border-radius: 0 0 15px 15px;
+border-top: 1px solid #e2e8f0;
 }
 
 .sdr-answers.expanded {
 display: block;
 }
 
-.module-group {
-background: #f7fafc;
-border-radius: 10px;
-margin-bottom: 20px;
-overflow: visible;
-border: 1px solid #e2e8f0;
-}
-
-.module-header {
-background: #edf2f7;
-padding: 15px 20px;
-border-bottom: 1px solid #e2e8f0;
-cursor: pointer;
-transition: background 0.2s ease;
-}
-
-.module-header:hover {
-background: #e2e8f0;
-}
-
-.module-title {
-color: #1a365d;
-font-weight: bold;
-margin-bottom: 5px;
-font-size: 1.1rem;
-}
-
-.module-meta {
-color: #718096;
-font-size: 0.9rem;
-}
-
-.module-answers {
-display: none;
-}
-
-.module-answers.expanded {
-display: block;
-}
-
-.answer-item {
-padding: 20px;
-border-bottom: 1px solid #e2e8f0;
-background: white;
-}
-
-.answer-item:last-child {
-border-bottom: none;
-}
-
-.question-text {
-color: #2d3748;
-font-weight: bold;
-margin-bottom: 12px;
-font-size: 1rem;
-line-height: 1.4;
-}
-
-.answer-text {
-color: #4a5568;
-line-height: 1.6;
-background: #f8fafc;
-padding: 15px;
-border-radius: 8px;
-border-left: 4px solid #667eea;
-white-space: pre-wrap;
-word-wrap: break-word;
-font-size: 0.95rem;
-max-height: none;
-overflow: visible;
-}
-
-.answer-text.collapsed {
-max-height: 100px;
-overflow: hidden;
-position: relative;
-}
-
-.answer-text.collapsed::after {
-content: '';
-position: absolute;
-bottom: 0;
-left: 0;
-right: 0;
-height: 30px;
-background: linear-gradient(transparent, #f8fafc);
-}
-
-.answer-meta {
+.no-data {
+text-align: center;
+padding: 40px;
 color: #a0aec0;
-font-size: 0.85rem;
-margin-top: 12px;
-display: flex;
-justify-content: space-between;
-align-items: center;
-flex-wrap: wrap;
-gap: 10px;
+font-style: italic;
 }
 
-.expand-answer-btn {
-background: #667eea;
-color: white;
-border: none;
-padding: 4px 8px;
-border-radius: 4px;
-font-size: 0.8rem;
-cursor: pointer;
-margin-top: 8px;
+.delete-btn {
+transition: all 0.2s ease;
 }
 
-.expand-answer-btn:hover {
-background: #5a67d8;
+.delete-btn:hover {
+transform: translateY(-1px);
+box-shadow: 0 4px 8px rgba(220, 38, 38, 0.3);
+}
+
+.delete-btn:disabled {
+opacity: 0.6;
+cursor: not-allowed;
+transform: none;
+}
+
+.expand-btn {
+transition: transform 0.2s ease;
+}
+
+.sdr-item.expanded .expand-btn {
+transform: rotate(180deg);
 }
 
 .btn {
@@ -598,112 +515,112 @@ async function loadData() {
     }
 }
 
-// Processar dados
+// Processar dados - versão corrigida sem duplicatas
 function processData() {
     sdrData = {};
     
+    // Primeiro, agrupar todos os dados por sessionId
+    const sessionGroups = {};
     allData.forEach(item => {
-        if (!item.data) return;
+        if (!item.data || !item.data.sessionId) return;
         
         const sessionId = item.data.sessionId;
-        if (!sessionId) return;
-        
-        if (!sdrData[sessionId]) {
-            sdrData[sessionId] = {
-                sessionId: sessionId,
-                sdrName: '',
-                sdrEmail: '',
-                startTime: null,
-                status: 'ativo',
-                progress: 0,
-                completedModules: 0,
-                answers: [],
-                modules: {}
-            };
+        if (!sessionGroups[sessionId]) {
+            sessionGroups[sessionId] = [];
         }
+        sessionGroups[sessionId].push(item);
+    });
+    
+    // Processar cada sessão
+    Object.entries(sessionGroups).forEach(([sessionId, items]) => {
+        sdrData[sessionId] = {
+            sessionId: sessionId,
+            sdrName: '',
+            sdrEmail: '',
+            startTime: null,
+            status: 'ativo',
+            progress: 0,
+            completedModules: 0,
+            modules: {}
+        };
         
         const session = sdrData[sessionId];
         
-        switch (item.type) {
-            case 'session_start':
-                session.sdrName = item.data.sdrName;
-                session.sdrEmail = item.data.sdrEmail;
-                session.startTime = item.data.startTime;
-                break;
-                
-            case 'answer':
-                // Evitar duplicatas usando um ID único
-                const answerId = `${item.data.moduleNumber}_${item.data.questionIndex}`;
-                
-                // Verificar se já existe esta resposta
-                const existingAnswer = session.answers.find(ans => 
-                    ans.moduleNumber === item.data.moduleNumber && 
-                    ans.questionIndex === item.data.questionIndex
-                );
-                
-                if (!existingAnswer) {
-                    session.answers.push({
-                        moduleNumber: item.data.moduleNumber,
-                        moduleTitle: item.data.moduleTitle,
-                        question: item.data.question,
-                        answer: item.data.answer,
-                        timestamp: item.data.timestamp,
-                        questionIndex: item.data.questionIndex
-                    });
-                } else {
-                    // Atualizar com a resposta mais recente
-                    existingAnswer.answer = item.data.answer;
-                    existingAnswer.timestamp = item.data.timestamp;
-                }
-                
-                // Organizar por módulos
-                if (!session.modules[item.data.moduleNumber]) {
-                    session.modules[item.data.moduleNumber] = {
-                        title: item.data.moduleTitle,
-                        answers: []
-                    };
-                }
-                
-                // Verificar se já existe no módulo
-                const existingModuleAnswer = session.modules[item.data.moduleNumber].answers.find(ans => 
-                    ans.questionIndex === item.data.questionIndex
-                );
-                
-                if (!existingModuleAnswer) {
-                    session.modules[item.data.moduleNumber].answers.push({
-                        question: item.data.question,
-                        answer: item.data.answer,
-                        timestamp: item.data.timestamp,
-                        questionIndex: item.data.questionIndex
-                    });
-                } else {
-                    // Atualizar com a resposta mais recente
-                    existingModuleAnswer.answer = item.data.answer;
-                    existingModuleAnswer.timestamp = item.data.timestamp;
-                }
-                break;
-                
-            case 'progress':
-                session.progress = item.data.progress;
-                session.completedModules = item.data.completedModules;
-                break;
-                
-            case 'training_completed':
-                session.status = 'concluído';
-                break;
-                
-            case 'session_pause':
-                session.status = 'pausado';
-                break;
+        // Separar itens por tipo
+        const sessionStart = items.find(item => item.type === 'session_start');
+        const answers = items.filter(item => item.type === 'answer');
+        const progressItems = items.filter(item => item.type === 'progress');
+        const completedItems = items.filter(item => item.type === 'training_completed');
+        const pausedItems = items.filter(item => item.type === 'session_pause');
+        
+        // Processar dados da sessão
+        if (sessionStart) {
+            session.sdrName = sessionStart.data.sdrName;
+            session.sdrEmail = sessionStart.data.sdrEmail;
+            session.startTime = sessionStart.data.startTime;
         }
-    });
-    
-    // Ordenar respostas por questionIndex em cada módulo
-    Object.values(sdrData).forEach(session => {
+        
+        // Processar progresso (pegar o mais recente)
+        if (progressItems.length > 0) {
+            const latestProgress = progressItems.sort((a, b) => 
+                new Date(b.timestamp?.seconds * 1000 || b.timestamp) - 
+                new Date(a.timestamp?.seconds * 1000 || a.timestamp)
+            )[0];
+            session.progress = latestProgress.data.progress || 0;
+            session.completedModules = latestProgress.data.completedModules || 0;
+        }
+        
+        // Processar status
+        if (completedItems.length > 0) {
+            session.status = 'concluído';
+        } else if (pausedItems.length > 0) {
+            session.status = 'pausado';
+        }
+        
+        // Processar respostas - pegar apenas a mais recente de cada pergunta
+        const uniqueAnswers = {};
+        answers.forEach(item => {
+            const key = `${item.data.moduleNumber}_${item.data.questionIndex}`;
+            const timestamp = new Date(item.data.timestamp?.seconds * 1000 || item.data.timestamp || 0);
+            
+            if (!uniqueAnswers[key] || timestamp > uniqueAnswers[key].timestamp) {
+                uniqueAnswers[key] = {
+                    moduleNumber: item.data.moduleNumber,
+                    moduleTitle: item.data.moduleTitle,
+                    questionIndex: item.data.questionIndex,
+                    question: item.data.question,
+                    answer: item.data.answer,
+                    timestamp: timestamp,
+                    characterCount: item.data.characterCount || item.data.answer?.length || 0
+                };
+            }
+        });
+        
+        // Organizar respostas por módulo
+        Object.values(uniqueAnswers).forEach(answer => {
+            if (!session.modules[answer.moduleNumber]) {
+                session.modules[answer.moduleNumber] = {
+                    title: answer.moduleTitle,
+                    answers: []
+                };
+            }
+            
+            session.modules[answer.moduleNumber].answers.push({
+                questionIndex: answer.questionIndex,
+                question: answer.question,
+                answer: answer.answer,
+                timestamp: answer.timestamp,
+                characterCount: answer.characterCount
+            });
+        });
+        
+        // Ordenar respostas por questionIndex em cada módulo
         Object.values(session.modules).forEach(module => {
             module.answers.sort((a, b) => a.questionIndex - b.questionIndex);
         });
     });
+    
+    console.log('Dados processados:', sdrData);
 }
 
 // Renderizar lista de SDRs
@@ -766,18 +683,35 @@ function renderSDRList() {
     });
 }
 
-// Renderizar respostas em formato de cards
+// Renderizar respostas - versão corrigida
 function renderAnswers(session) {
-    if (Object.keys(session.modules).length === 0) {
-        return '<div class="no-data">Nenhuma resposta ainda</div>';
+    console.log('Renderizando respostas para sessão:', session.sessionId, session.modules);
+    
+    const moduleEntries = Object.entries(session.modules);
+    
+    if (moduleEntries.length === 0) {
+        return '<div class="no-data">Nenhuma resposta encontrada</div>';
     }
     
-    return Object.entries(session.modules)
-        .sort(([a], [b]) => parseInt(a) - parseInt(b)) // Ordenar módulos por número
+    return moduleEntries
+        .sort(([a], [b]) => parseInt(a) - parseInt(b)) // Ordenar módulos numericamente
         .map(([moduleNum, module]) => {
+            console.log(`Módulo ${moduleNum}:`, module);
+            
+            if (!module.answers || module.answers.length === 0) {
+                return `
+                    <div style="margin-bottom: 25px;">
+                        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px;">
+                            <h4 style="margin: 0; font-size: 1.1rem; font-weight: bold;">${module.title}</h4>
+                            <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9rem;">Nenhuma resposta ainda</p>
+                        </div>
+                    </div>
+                `;
+            }
+            
             const moduleAnswers = module.answers.map((answer, index) => {
-                const timestamp = answer.timestamp ? new Date(answer.timestamp.seconds ? answer.timestamp.seconds * 1000 : answer.timestamp).toLocaleString('pt-BR') : 'N/A';
-                const answerLength = answer.answer.length;
+                const timestamp = answer.timestamp ? answer.timestamp.toLocaleString('pt-BR') : 'N/A';
+                const answerLength = answer.characterCount || answer.answer?.length || 0;
                 const quality = answerLength >= 200 ? 'Excelente' : answerLength >= 100 ? 'Boa' : 'Precisa melhorar';
                 const qualityColor = answerLength >= 200 ? '#059669' : answerLength >= 100 ? '#d97706' : '#dc2626';
                 
@@ -785,7 +719,7 @@ function renderAnswers(session) {
                     <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid ${qualityColor};">
                         <!-- Pergunta -->
                         <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid #3b82f6;">
-                            <h5 style="color: #1e40af; margin: 0 0 5px 0; font-size: 0.9rem; font-weight: bold;">❓ PERGUNTA:</h5>
+                            <h5 style="color: #1e40af; margin: 0 0 5px 0; font-size: 0.9rem; font-weight: bold;">❓ PERGUNTA ${answer.questionIndex + 1}:</h5>
                             <p style="color: #1e3a8a; margin: 0; font-weight: 500; line-height: 1.4;">${answer.question}</p>
                         </div>
                         
@@ -793,12 +727,12 @@ function renderAnswers(session) {
                         <div style="margin-bottom: 15px;">
                             <h5 style="color: #059669; margin: 0 0 10px 0; font-size: 0.9rem; font-weight: bold;">✅ RESPOSTA:</h5>
                             <div style="background: #f9fafb; padding: 15px; border-radius: 8px; border-left: 3px solid ${qualityColor};">
-                                <p style="color: #374151; margin: 0; line-height: 1.6; white-space: pre-wrap; font-size: 0.95rem;">${answer.answer}</p>
+                                <p style="color: #374151; margin: 0; line-height: 1.6; white-space: pre-wrap; font-size: 0.95rem;">${answer.answer || 'Resposta não encontrada'}</p>
                             </div>
                         </div>
                         
                         <!-- Metadados -->
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 15px; border-top: 1px solid #e5e7eb; font-size: 0.85rem; color: #6b7280;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 15px; border-top: 1px solid #e5e7eb; font-size: 0.85rem; color: #6b7280; flex-wrap: wrap; gap: 10px;">
                             <span>📅 ${timestamp}</span>
                             <span>📝 ${answerLength} caracteres</span>
                             <span style="color: ${qualityColor}; font-weight: bold;">⭐ ${quality}</span>
@@ -826,6 +760,7 @@ function toggleAnswers(sessionId) {
     console.log('toggleAnswers chamada para:', sessionId);
     const answersEl = document.getElementById(`answers-${sessionId}`);
     const expandBtn = document.querySelector(`[data-session="${sessionId}"] .expand-btn`);
+    const sdrItem = document.querySelector(`[data-session="${sessionId}"]`);
     
     if (!answersEl || !expandBtn) {
         console.error('Elementos não encontrados para sessionId:', sessionId);
@@ -835,9 +770,11 @@ function toggleAnswers(sessionId) {
     if (answersEl.classList.contains('expanded')) {
         answersEl.classList.remove('expanded');
         expandBtn.textContent = '▼';
+        sdrItem.classList.remove('expanded');
     } else {
         answersEl.classList.add('expanded');
         expandBtn.textContent = '▲';
+        sdrItem.classList.add('expanded');
     }
 }
 
