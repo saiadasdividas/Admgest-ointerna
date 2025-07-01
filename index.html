@@ -232,6 +232,8 @@ color: #742a2a;
 .sdr-answers {
 padding: 0 20px 20px;
 display: none;
+max-height: none;
+overflow: visible;
 }
 
 .sdr-answers.expanded {
@@ -242,19 +244,27 @@ display: block;
 background: #f7fafc;
 border-radius: 10px;
 margin-bottom: 20px;
-overflow: hidden;
+overflow: visible;
+border: 1px solid #e2e8f0;
 }
 
 .module-header {
 background: #edf2f7;
 padding: 15px 20px;
 border-bottom: 1px solid #e2e8f0;
+cursor: pointer;
+transition: background 0.2s ease;
+}
+
+.module-header:hover {
+background: #e2e8f0;
 }
 
 .module-title {
 color: #1a365d;
 font-weight: bold;
 margin-bottom: 5px;
+font-size: 1.1rem;
 }
 
 .module-meta {
@@ -262,9 +272,18 @@ color: #718096;
 font-size: 0.9rem;
 }
 
+.module-answers {
+display: none;
+}
+
+.module-answers.expanded {
+display: block;
+}
+
 .answer-item {
-padding: 15px 20px;
+padding: 20px;
 border-bottom: 1px solid #e2e8f0;
+background: white;
 }
 
 .answer-item:last-child {
@@ -274,25 +293,65 @@ border-bottom: none;
 .question-text {
 color: #2d3748;
 font-weight: bold;
-margin-bottom: 8px;
-font-size: 0.95rem;
+margin-bottom: 12px;
+font-size: 1rem;
+line-height: 1.4;
 }
 
 .answer-text {
 color: #4a5568;
 line-height: 1.6;
-background: white;
-padding: 12px;
+background: #f8fafc;
+padding: 15px;
 border-radius: 8px;
 border-left: 4px solid #667eea;
+white-space: pre-wrap;
+word-wrap: break-word;
+font-size: 0.95rem;
+max-height: none;
+overflow: visible;
+}
+
+.answer-text.collapsed {
+max-height: 100px;
+overflow: hidden;
+position: relative;
+}
+
+.answer-text.collapsed::after {
+content: '';
+position: absolute;
+bottom: 0;
+left: 0;
+right: 0;
+height: 30px;
+background: linear-gradient(transparent, #f8fafc);
 }
 
 .answer-meta {
 color: #a0aec0;
-font-size: 0.8rem;
-margin-top: 8px;
+font-size: 0.85rem;
+margin-top: 12px;
 display: flex;
 justify-content: space-between;
+align-items: center;
+flex-wrap: wrap;
+gap: 10px;
+}
+
+.expand-answer-btn {
+background: #667eea;
+color: white;
+border: none;
+padding: 4px 8px;
+border-radius: 4px;
+font-size: 0.8rem;
+cursor: pointer;
+margin-top: 8px;
+}
+
+.expand-answer-btn:hover {
+background: #5a67d8;
 }
 
 .btn {
@@ -678,16 +737,27 @@ function renderAnswers(session) {
     }
     
     return Object.entries(session.modules).map(([moduleNum, module]) => {
-        const moduleAnswers = module.answers.map(answer => {
+        const moduleAnswers = module.answers.map((answer, index) => {
             const timestamp = answer.timestamp ? new Date(answer.timestamp.seconds ? answer.timestamp.seconds * 1000 : answer.timestamp).toLocaleString('pt-BR') : 'N/A';
+            const answerLength = answer.answer.length;
+            const isLongAnswer = answerLength > 200;
+            const answerPreview = isLongAnswer ? answer.answer.substring(0, 200) + '...' : answer.answer;
             
             return `
                 <div class="answer-item">
                     <div class="question-text">${answer.question}</div>
-                    <div class="answer-text">${answer.answer}</div>
+                    <div class="answer-text ${isLongAnswer ? 'collapsed' : ''}" id="answer-${moduleNum}-${index}">
+                        ${isLongAnswer ? answerPreview : answer.answer}
+                    </div>
+                    ${isLongAnswer ? `
+                        <button class="expand-answer-btn" onclick="toggleAnswerExpansion('${moduleNum}', '${index}', this)">
+                            Ver resposta completa
+                        </button>
+                    ` : ''}
                     <div class="answer-meta">
-                        <span>Respondido em: ${timestamp}</span>
-                        <span>Caracteres: ${answer.answer.length}</span>
+                        <span>📅 ${timestamp}</span>
+                        <span>📝 ${answerLength} caracteres</span>
+                        <span>⭐ ${answerLength >= 200 ? 'Completa' : answerLength >= 100 ? 'Média' : 'Curta'}</span>
                     </div>
                 </div>
             `;
@@ -695,11 +765,16 @@ function renderAnswers(session) {
         
         return `
             <div class="module-group">
-                <div class="module-header">
+                <div class="module-header" onclick="toggleModuleAnswers('${moduleNum}')">
                     <div class="module-title">${module.title}</div>
-                    <div class="module-meta">${module.answers.length} resposta(s)</div>
+                    <div class="module-meta">
+                        ${module.answers.length} resposta(s) • 
+                        Clique para ${document.getElementById(`module-answers-${moduleNum}`)?.classList.contains('expanded') ? 'ocultar' : 'expandir'}
+                    </div>
                 </div>
-                ${moduleAnswers}
+                <div class="module-answers" id="module-answers-${moduleNum}">
+                    ${moduleAnswers}
+                </div>
             </div>
         `;
     }).join('');
@@ -948,6 +1023,58 @@ async function clearAllTestData() {
     } catch (error) {
         console.error('Erro ao limpar dados:', error);
         alert('❌ Erro ao limpar dados. Tente novamente.');
+    }
+}
+
+// Toggle expansão de respostas individuais
+function toggleAnswerExpansion(moduleNum, answerIndex, button) {
+    const answerId = `answer-${moduleNum}-${answerIndex}`;
+    const answerElement = document.getElementById(answerId);
+    
+    if (!answerElement) return;
+    
+    if (answerElement.classList.contains('collapsed')) {
+        // Expandir
+        answerElement.classList.remove('collapsed');
+        // Buscar resposta completa dos dados
+        const sessionId = Object.keys(sdrData).find(sessionId => 
+            sdrData[sessionId].modules[moduleNum] && 
+            sdrData[sessionId].modules[moduleNum].answers[answerIndex]
+        );
+        
+        if (sessionId) {
+            const fullAnswer = sdrData[sessionId].modules[moduleNum].answers[answerIndex].answer;
+            answerElement.textContent = fullAnswer;
+        }
+        
+        button.textContent = 'Ver menos';
+    } else {
+        // Colapsar
+        answerElement.classList.add('collapsed');
+        const sessionId = Object.keys(sdrData).find(sessionId => 
+            sdrData[sessionId].modules[moduleNum] && 
+            sdrData[sessionId].modules[moduleNum].answers[answerIndex]
+        );
+        
+        if (sessionId) {
+            const fullAnswer = sdrData[sessionId].modules[moduleNum].answers[answerIndex].answer;
+            const preview = fullAnswer.length > 200 ? fullAnswer.substring(0, 200) + '...' : fullAnswer;
+            answerElement.textContent = preview;
+        }
+        
+        button.textContent = 'Ver resposta completa';
+    }
+}
+
+// Toggle expansão de módulos
+function toggleModuleAnswers(moduleNum) {
+    const moduleAnswers = document.getElementById(`module-answers-${moduleNum}`);
+    if (!moduleAnswers) return;
+    
+    if (moduleAnswers.classList.contains('expanded')) {
+        moduleAnswers.classList.remove('expanded');
+    } else {
+        moduleAnswers.classList.add('expanded');
     }
 }
 </script>
