@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin - Treinamento SDR</title>
+<!-- Firebase SDK -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-app-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-firestore-compat.min.js"></script>
+<style>
+* {
+margin: 0;
+padding: 0;
+box-sizing: border-box;
+}
+
+body {
+font-family: 'Arial', sans-serif;
+background: linear-gradient(135deg, #1a365d 0%, #2d3748 100%);
+min-height: 100vh;
+color: #333;
+}
+
+.container {
+max-width: 1400px;
+margin: 0 auto;
+padding: 20px;
+}
+
+.header {
+background: white;
+padding: 30px;
+border-radius: 20px;
+box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+margin-bottom: 30px;
+display: flex;
+justify-content: space-between;
+align-items: center;
+flex-wrap: wrap;
+}
+
+.header h1 {
+color: #1a365d;
+font-size: 2.2rem;
+margin-bottom: 5px;
+}
+
+.header p {
+color: #718096;
+font-size: 1.1rem;
+}
+
+.admin-login {
+display: flex;
+gap: 15px;
+align-items: center;
+}
+
+.admin-login input {
+padding: 10px 15px;
+border: 2px solid #e2e8f0;
+border-radius: 8px;
+font-size: 14px;
+}
+
+.admin-login input:focus {
+outline: none;
+border-color: #1a365d;
+}
+
+.stats-grid {
+display: grid;
+grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+gap: 20px;
+margin-bottom: 30px;
+}
+
+.stat-card {
+background: white;
+padding: 25px;
+border-radius: 15px;
+box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+text-align: center;
+}
+
+.stat-number {
+font-size: 2.5rem;
+font-weight: bold;
+color: #1a365d;
+margin-bottom: 5px;
+}
+
+.stat-label {
+color: #718096;
+font-size: 1rem;
+}
+
+.filters-section {
+background: white;
+padding: 20px;
+border-radius: 15px;
+box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+margin-bottom: 30px;
+}
+
+.filters-row {
+display: flex;
+gap: 15px;
+align-items: center;
+flex-wrap: wrap;
+}
+
+.filter-group {
+display: flex;
+flex-direction: column;
+gap: 5px;
+}
+
+.filter-group label {
+font-size: 0.9rem;
+color: #4a5568;
+font-weight: bold;
+}
+
+.filter-group select,
+.filter-group input {
+padding: 8px 12px;
+border: 2px solid #e2e8f0;
+border-radius: 8px;
+font-size: 14px;
+}
+
+.sdr-list {
+background: white;
+border-radius: 15px;
+box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+overflow: hidden;
+}
+
+.sdr-item {
+border-bottom: 1px solid #e2e8f0;
+transition: background 0.2s ease;
+cursor: pointer;
+}
+
+.sdr-item:hover {
+background: #f7fafc;
+}
+
+.sdr-item:last-child {
+border-bottom: none;
+}
+
+.sdr-header {
+padding: 20px;
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+
+.sdr-info {
+display: flex;
+align-items: center;
+gap: 15px;
+}
+
+.sdr-avatar {
+width: 50px;
+height: 50px;
+border-radius: 50%;
+background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+display: flex;
+align-items: center;
+justify-content: center;
+color: white;
+font-weight: bold;
+font-size: 1.2rem;
+}
+
+.sdr-details h3 {
+color: #1a365d;
+margin-bottom: 5px;
+font-size: 1.1rem;
+}
+
+.sdr-meta {
+color: #718096;
+font-size: 0.9rem;
+}
+
+.sdr-progress {
+display: flex;
+align-items: center;
+gap: 15px;
+}
+
+.progress-circle {
+width: 60px;
+height: 60px;
+border-radius: 50%;
+background: conic-gradient(#38a169 0deg, #38a169 0deg, #e2e8f0 0deg);
+display: flex;
+align-items: center;
+justify-content: center;
+font-weight: bold;
+color: #1a365d;
+position: relative;
+}
+
+.status-badge {
+padding: 6px 12px;
+border-radius: 20px;
+font-size: 0.8rem;
+font-weight: bold;
+}
+
+.status-active {
+background: #c6f6d5;
+color: #22543d;
+}
+
+.status-completed {
+background: #bee3f8;
+color: #1a365d;
+}
+
+.status-paused {
+background: #fed7d7;
+color: #742a2a;
+}
+
+.sdr-answers {
+padding: 0 20px 20px;
+display: none;
+}
+
+.sdr-answers.expanded {
+display: block;
+}
+
+.module-group {
+background: #f7fafc;
+border-radius: 10px;
+margin-bottom: 20px;
+overflow: hidden;
+}
+
+.module-header {
+background: #edf2f7;
+padding: 15px 20px;
+border-bottom: 1px solid #e2e8f0;
+}
+
+.module-title {
+color: #1a365d;
+font-weight: bold;
+margin-bottom: 5px;
+}
+
+.module-meta {
+color: #718096;
+font-size: 0.9rem;
+}
+
+.answer-item {
+padding: 15px 20px;
+border-bottom: 1px solid #e2e8f0;
+}
+
+.answer-item:last-child {
+border-bottom: none;
+}
+
+.question-text {
+color: #2d3748;
+font-weight: bold;
+margin-bottom: 8px;
+font-size: 0.95rem;
+}
+
+.answer-text {
+color: #4a5568;
+line-height: 1.6;
+background: white;
+padding: 12px;
+border-radius: 8px;
+border-left: 4px solid #667eea;
+}
+
+.answer-meta {
+color: #a0aec0;
+font-size: 0.8rem;
+margin-top: 8px;
+display: flex;
+justify-content: space-between;
+}
+
+.btn {
+background: linear-gradient(135deg, #1a365d 0%, #2d3748 100%);
+color: white;
+border: none;
+padding: 10px 20px;
+border-radius: 8px;
+font-size: 14px;
+font-weight: bold;
+cursor: pointer;
+transition: transform 0.2s ease;
+}
+
+.btn:hover {
+transform: translateY(-2px);
+}
+
+.btn-export {
+background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+}
+
+.btn-refresh {
+background: linear-gradient(135deg, #3182ce 0%, #2c5282 100%);
+}
+
+.loading {
+text-align: center;
+padding: 40px;
+color: #718096;
+}
+
+.loading-spinner {
+border: 4px solid #e2e8f0;
+border-top: 4px solid #1a365d;
+border-radius: 50%;
+width: 40px;
+height: 40px;
+animation: spin 1s linear infinite;
+margin: 0 auto 20px;
+}
+
+@keyframes spin {
+0% { transform: rotate(0deg); }
+100% { transform: rotate(360deg); }
+}
+
+.no-data {
+text-align: center;
+padding: 40px;
+color: #a0aec0;
+}
+
+.expand-btn {
+background: none;
+border: none;
+color: #1a365d;
+cursor: pointer;
+font-size: 1.2rem;
+padding: 5px;
+border-radius: 5px;
+transition: background 0.2s ease;
+}
+
+.expand-btn:hover {
+background: #edf2f7;
+}
+
+.admin-section {
+display: none;
+}
+
+.admin-section.active {
+display: block;
+}
+
+@media (max-width: 768px) {
+.header {
+flex-direction: column;
+gap: 20px;
+text-align: center;
+}
+
+.stats-grid {
+grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.filters-row {
+flex-direction: column;
+align-items: stretch;
+}
+
+.sdr-header {
+flex-direction: column;
+gap: 15px;
+align-items: flex-start;
+}
+
+.sdr-progress {
+align-self: flex-end;
+}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<!-- Login Admin -->
+<div id="adminLogin" class="header">
+<div>
+<h1>🔐 Acesso Administrativo</h1>
+<p>Faça login para acessar o painel de controle</p>
+</div>
+<div class="admin-login">
+<input type="password" id="adminPassword" placeholder="Senha de administrador">
+<button class="btn" onclick="loginAdmin()">Entrar</button>
+</div>
+</div>
+
+<!-- Painel Admin -->
+<div id="adminPanel" class="admin-section">
+<div class="header">
+<div>
+<h1>📊 Painel Administrativo</h1>
+<p>Treinamento SDR - Monitoramento em Tempo Real</p>
+</div>
+<div style="display: flex; gap: 10px;">
+<button class="btn btn-refresh" onclick="loadData()">🔄 Atualizar</button>
+<button class="btn btn-export" onclick="exportData()">📊 Exportar</button>
+<button class="btn" onclick="logoutAdmin()">Sair</button>
+</div>
+</div>
+
+<!-- Estatísticas -->
+<div class="stats-grid">
+<div class="stat-card">
+<div class="stat-number" id="totalSDRs">0</div>
+<div class="stat-label">SDRs Cadastrados</div>
+</div>
+<div class="stat-card">
+<div class="stat-number" id="activeSessions">0</div>
+<div class="stat-label">Sessões Ativas</div>
+</div>
+<div class="stat-card">
+<div class="stat-number" id="completedTrainings">0</div>
+<div class="stat-label">Treinamentos Concluídos</div>
+</div>
+<div class="stat-card">
+<div class="stat-number" id="totalAnswers">0</div>
+<div class="stat-label">Respostas Coletadas</div>
+</div>
+</div>
+
+<!-- Filtros -->
+<div class="filters-section">
+<div class="filters-row">
+<div class="filter-group">
+<label>Filtrar por Status:</label>
+<select id="statusFilter" onchange="applyFilters()">
+<option value="">Todos</option>
+<option value="ativo">Ativo</option>
+<option value="concluído">Concluído</option>
+<option value="pausado">Pausado</option>
+</select>
+</div>
+<div class="filter-group">
+<label>Buscar SDR:</label>
+<input type="text" id="searchSDR" placeholder="Nome ou e-mail" oninput="applyFilters()">
+</div>
+<div class="filter-group">
+<label>Data:</label>
+<input type="date" id="dateFilter" onchange="applyFilters()">
+</div>
+</div>
+</div>
+
+<!-- Lista de SDRs -->
+<div class="sdr-list" id="sdrList">
+<div class="loading">
+<div class="loading-spinner"></div>
+<p>Carregando dados...</p>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+// Configuração do Firebase
+const firebaseConfig = {
+    apiKey: "AIzaSyAxkOOHB1m2vhleekARWnXyhnTjCt251LQ",
+    authDomain: "plataforma-de-treinament-9a00b.firebaseapp.com",
+    projectId: "plataforma-de-treinament-9a00b",
+    storageBucket: "plataforma-de-treinament-9a00b.firebasestorage.app",
+    messagingSenderId: "192125351398",
+    appId: "1:192125351398:web:c16cc461c4c853132a1227"
+};
+
+// Inicializar Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// Variáveis globais
+let allData = [];
+let sdrData = {};
+const ADMIN_PASSWORD = "admin123"; // Altere para sua senha
+
+// Login Admin
+function loginAdmin() {
+    const password = document.getElementById('adminPassword').value;
+    if (password === ADMIN_PASSWORD) {
+        document.getElementById('adminLogin').style.display = 'none';
+        document.getElementById('adminPanel').classList.add('active');
+        loadData();
+    } else {
+        alert('Senha incorreta!');
+    }
+}
+
+// Logout Admin
+function logoutAdmin() {
+    document.getElementById('adminLogin').style.display = 'block';
+    document.getElementById('adminPanel').classList.remove('active');
+    document.getElementById('adminPassword').value = '';
+}
+
+// Carregar dados do Firebase
+async function loadData() {
+    try {
+        const snapshot = await db.collection('sdr_training').orderBy('timestamp', 'desc').get();
+        allData = [];
+        
+        snapshot.forEach(doc => {
+            allData.push({
+                id: doc.id,
+                ...doc.data()
+            });
+        });
+        
+        processData();
+        renderSDRList();
+        updateStats();
+    } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+        document.getElementById('sdrList').innerHTML = '<div class="no-data">Erro ao carregar dados</div>';
+    }
+}
+
+// Processar dados
+function processData() {
+    sdrData = {};
+    
+    allData.forEach(item => {
+        if (!item.data) return;
+        
+        const sessionId = item.data.sessionId;
+        if (!sessionId) return;
+        
+        if (!sdrData[sessionId]) {
+            sdrData[sessionId] = {
+                sessionId: sessionId,
+                sdrName: '',
+                sdrEmail: '',
+                startTime: null,
+                status: 'ativo',
+                progress: 0,
+                completedModules: 0,
+                answers: [],
+                modules: {}
+            };
+        }
+        
+        const session = sdrData[sessionId];
+        
+        switch (item.type) {
+            case 'session_start':
+                session.sdrName = item.data.sdrName;
+                session.sdrEmail = item.data.sdrEmail;
+                session.startTime = item.data.startTime;
+                break;
+                
+            case 'answer':
+                session.answers.push({
+                    moduleNumber: item.data.moduleNumber,
+                    moduleTitle: item.data.moduleTitle,
+                    question: item.data.question,
+                    answer: item.data.answer,
+                    timestamp: item.data.timestamp
+                });
+                
+                if (!session.modules[item.data.moduleNumber]) {
+                    session.modules[item.data.moduleNumber] = {
+                        title: item.data.moduleTitle,
+                        answers: []
+                    };
+                }
+                
+                session.modules[item.data.moduleNumber].answers.push({
+                    question: item.data.question,
+                    answer: item.data.answer,
+                    timestamp: item.data.timestamp
+                });
+                break;
+                
+            case 'progress':
+                session.progress = item.data.progress;
+                session.completedModules = item.data.completedModules;
+                break;
+                
+            case 'training_completed':
+                session.status = 'concluído';
+                break;
+                
+            case 'session_pause':
+                session.status = 'pausado';
+                break;
+        }
+    });
+}
+
+// Renderizar lista de SDRs
+function renderSDRList() {
+    const sdrListEl = document.getElementById('sdrList');
+    const sessions = Object.values(sdrData);
+    
+    if (sessions.length === 0) {
+        sdrListEl.innerHTML = '<div class="no-data">Nenhum dado encontrado</div>';
+        return;
+    }
+    
+    const html = sessions.map(session => {
+        const initials = session.sdrName.split(' ').map(n => n[0]).join('').toUpperCase();
+        const startDate = session.startTime ? new Date(session.startTime.seconds ? session.startTime.seconds * 1000 : session.startTime).toLocaleString('pt-BR') : 'N/A';
+        
+        return `
+            <div class="sdr-item" data-session="${session.sessionId}">
+                <div class="sdr-header" onclick="toggleAnswers('${session.sessionId}')">
+                    <div class="sdr-info">
+                        <div class="sdr-avatar">${initials}</div>
+                        <div class="sdr-details">
+                            <h3>${session.sdrName}</h3>
+                            <div class="sdr-meta">
+                                ${session.sdrEmail} • Iniciado em: ${startDate}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="sdr-progress">
+                        <div class="progress-circle" style="background: conic-gradient(#38a169 ${session.progress * 3.6}deg, #e2e8f0 ${session.progress * 3.6}deg)">
+                            ${session.progress}%
+                        </div>
+                        <div class="status-badge status-${session.status === 'concluído' ? 'completed' : session.status === 'pausado' ? 'paused' : 'active'}">
+                            ${session.status}
+                        </div>
+                        <button class="expand-btn">▼</button>
+                    </div>
+                </div>
+                <div class="sdr-answers" id="answers-${session.sessionId}">
+                    ${renderAnswers(session)}
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    sdrListEl.innerHTML = html;
+}
+
+// Renderizar respostas
+function renderAnswers(session) {
+    if (Object.keys(session.modules).length === 0) {
+        return '<div class="no-data">Nenhuma resposta ainda</div>';
+    }
+    
+    return Object.entries(session.modules).map(([moduleNum, module]) => {
+        const moduleAnswers = module.answers.map(answer => {
+            const timestamp = answer.timestamp ? new Date(answer.timestamp.seconds ? answer.timestamp.seconds * 1000 : answer.timestamp).toLocaleString('pt-BR') : 'N/A';
+            
+            return `
+                <div class="answer-item">
+                    <div class="question-text">${answer.question}</div>
+                    <div class="answer-text">${answer.answer}</div>
+                    <div class="answer-meta">
+                        <span>Respondido em: ${timestamp}</span>
+                        <span>Caracteres: ${answer.answer.length}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        return `
+            <div class="module-group">
+                <div class="module-header">
+                    <div class="module-title">${module.title}</div>
+                    <div class="module-meta">${module.answers.length} resposta(s)</div>
+                </div>
+                ${moduleAnswers}
+            </div>
+        `;
+    }).join('');
+}
+
+// Toggle respostas
+function toggleAnswers(sessionId) {
+    const answersEl = document.getElementById(`answers-${sessionId}`);
+    const expandBtn = document.querySelector(`[data-session="${sessionId}"] .expand-btn`);
+    
+    if (answersEl.classList.contains('expanded')) {
+        answersEl.classList.remove('expanded');
+        expandBtn.textContent = '▼';
+    } else {
+        answersEl.classList.add('expanded');
+        expandBtn.textContent = '▲';
+    }
+}
+
+// Atualizar estatísticas
+function updateStats() {
+    const sessions = Object.values(sdrData);
+    
+    document.getElementById('totalSDRs').textContent = sessions.length;
+    document.getElementById('activeSessions').textContent = sessions.filter(s => s.status === 'ativo').length;
+    document.getElementById('completedTrainings').textContent = sessions.filter(s => s.status === 'concluído').length;
+    document.getElementById('totalAnswers').textContent = sessions.reduce((total, s) => total + s.answers.length, 0);
+}
+
+// Aplicar filtros
+function applyFilters() {
+    const statusFilter = document.getElementById('statusFilter').value;
+    const searchFilter = document.getElementById('searchSDR').value.toLowerCase();
+    const dateFilter = document.getElementById('dateFilter').value;
+    
+    const sdrItems = document.querySelectorAll('.sdr-item');
+    
+    sdrItems.forEach(item => {
+        const sessionId = item.dataset.session;
+        const session = sdrData[sessionId];
+        
+        let show = true;
+        
+        // Filtro por status
+        if (statusFilter && session.status !== statusFilter) {
+            show = false;
+        }
+        
+        // Filtro por busca
+        if (searchFilter && !session.sdrName.toLowerCase().includes(searchFilter) && !session.sdrEmail.toLowerCase().includes(searchFilter)) {
+            show = false;
+        }
+        
+        // Filtro por data
+        if (dateFilter && session.startTime) {
+            const sessionDate = new Date(session.startTime.seconds ? session.startTime.seconds * 1000 : session.startTime);
+            const filterDate = new Date(dateFilter);
+            if (sessionDate.toDateString() !== filterDate.toDateString()) {
+                show = false;
+            }
+        }
+        
+        item.style.display = show ? 'block' : 'none';
+    });
+}
+
+// Exportar dados
+function exportData() {
+    const sessions = Object.values(sdrData);
+    const csvContent = "data:text/csv;charset=utf-8," + 
+        "Nome,Email,Status,Progresso,Módulo,Pergunta,Resposta,Data\n" +
+        sessions.map(session => 
+            session.answers.map(answer => 
+                `"${session.sdrName}","${session.sdrEmail}","${session.status}","${session.progress}%","${answer.moduleTitle}","${answer.question}","${answer.answer}","${new Date(answer.timestamp.seconds * 1000).toLocaleString('pt-BR')}"`
+            ).join('\n')
+        ).join('\n');
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `treinamento_sdr_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Auto-refresh a cada 30 segundos
+setInterval(() => {
+    if (document.getElementById('adminPanel').classList.contains('active')) {
+        loadData();
+    }
+}, 30000);
+</script>
+</body>
+</html>
