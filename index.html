@@ -493,10 +493,33 @@ function logoutAdmin() {
     document.getElementById('adminPassword').value = '';
 }
 
-// Carregar dados do Firebase
+// Carregar dados do Firebase com tratamento de erro
 async function loadData() {
     try {
-        const snapshot = await db.collection('sdr_training').orderBy('timestamp', 'desc').get();
+        // Mostrar loading
+        document.getElementById('sdrList').innerHTML = `
+            <div class="loading">
+                <div class="loading-spinner"></div>
+                <p>Carregando dados...</p>
+            </div>
+        `;
+        
+        console.log('Iniciando carregamento de dados...');
+        
+        // Tentar conectar ao Firestore com timeout
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout na conexão')), 10000)
+        );
+        
+        const dataPromise = db.collection('sdr_training')
+            .orderBy('timestamp', 'desc')
+            .limit(1000) // Limitar para evitar sobrecarga
+            .get();
+            
+        const snapshot = await Promise.race([dataPromise, timeoutPromise]);
+        
+        console.log('Dados carregados do Firebase. Documentos encontrados:', snapshot.size);
+        
         allData = [];
         
         snapshot.forEach(doc => {
@@ -506,121 +529,199 @@ async function loadData() {
             });
         });
         
+        console.log('Total de registros processados:', allData.length);
+        
+        if (allData.length === 0) {
+            document.getElementById('sdrList').innerHTML = '<div class="no-data">Nenhum dado encontrado no Firebase</div>';
+            updateStats();
+            return;
+        }
+        
         processData();
         renderSDRList();
         updateStats();
+        
+        console.log('Carregamento concluído com sucesso');
+        
     } catch (error) {
         console.error('Erro ao carregar dados:', error);
-        document.getElementById('sdrList').innerHTML = '<div class="no-data">Erro ao carregar dados</div>';
+        
+        let errorMessage = 'Erro desconhecido';
+        
+        if (error.message.includes('Timeout')) {
+            errorMessage = 'Timeout na conexão com Firebase';
+        } else if (error.code === 'unavailable') {
+            errorMessage = 'Firebase indisponível. Verifique sua conexão com internet.';
+        } else if (error.code === 'permission-denied') {
+            errorMessage = 'Permissão negada. Verifique as regras do Firestore.';
+        } else {
+            errorMessage = `Erro: ${error.message}`;
+        }
+        
+        document.getElementById('sdrList').innerHTML = `
+            <div class="no-data">
+                <h3>❌ Erro ao carregar dados</h3>
+                <p>${errorMessage}</p>
+                <button class="btn" onclick="loadData()" style="margin-top: 15px;">🔄 Tentar novamente</button>
+            </div>
+        `;
+        
+        // Ainda tentar atualizar stats mesmo com erro
+        sdrData = {};
+        updateStats();
     }
 }
 
-// Processar dados - versão corrigida sem duplicatas
+// Processar dados - versão com tratamento de erro
 function processData() {
-    sdrData = {};
-    
-    // Primeiro, agrupar todos os dados por sessionId
-    const sessionGroups = {};
-    allData.forEach(item => {
-        if (!item.data || !item.data.sessionId) return;
+    try {
+        console.log('Iniciando processamento de dados. Total de itens:', allData.length);
         
-        const sessionId = item.data.sessionId;
-        if (!sessionGroups[sessionId]) {
-            sessionGroups[sessionId] = [];
-        }
-        sessionGroups[sessionId].push(item);
-    });
-    
-    // Processar cada sessão
-    Object.entries(sessionGroups).forEach(([sessionId, items]) => {
-        sdrData[sessionId] = {
-            sessionId: sessionId,
-            sdrName: '',
-            sdrEmail: '',
-            startTime: null,
-            status: 'ativo',
-            progress: 0,
-            completedModules: 0,
-            modules: {}
-        };
+        sdrData = {};
         
-        const session = sdrData[sessionId];
-        
-        // Separar itens por tipo
-        const sessionStart = items.find(item => item.type === 'session_start');
-        const answers = items.filter(item => item.type === 'answer');
-        const progressItems = items.filter(item => item.type === 'progress');
-        const completedItems = items.filter(item => item.type === 'training_completed');
-        const pausedItems = items.filter(item => item.type === 'session_pause');
-        
-        // Processar dados da sessão
-        if (sessionStart) {
-            session.sdrName = sessionStart.data.sdrName;
-            session.sdrEmail = sessionStart.data.sdrEmail;
-            session.startTime = sessionStart.data.startTime;
+        if (!allData || !Array.isArray(allData) || allData.length === 0) {
+            console.warn('allData está vazio ou inválido');
+            return;
         }
         
-        // Processar progresso (pegar o mais recente)
-        if (progressItems.length > 0) {
-            const latestProgress = progressItems.sort((a, b) => 
-                new Date(b.timestamp?.seconds * 1000 || b.timestamp) - 
-                new Date(a.timestamp?.seconds * 1000 || a.timestamp)
-            )[0];
-            session.progress = latestProgress.data.progress || 0;
-            session.completedModules = latestProgress.data.completedModules || 0;
-        }
-        
-        // Processar status
-        if (completedItems.length > 0) {
-            session.status = 'concluído';
-        } else if (pausedItems.length > 0) {
-            session.status = 'pausado';
-        }
-        
-        // Processar respostas - pegar apenas a mais recente de cada pergunta
-        const uniqueAnswers = {};
-        answers.forEach(item => {
-            const key = `${item.data.moduleNumber}_${item.data.questionIndex}`;
-            const timestamp = new Date(item.data.timestamp?.seconds * 1000 || item.data.timestamp || 0);
-            
-            if (!uniqueAnswers[key] || timestamp > uniqueAnswers[key].timestamp) {
-                uniqueAnswers[key] = {
-                    moduleNumber: item.data.moduleNumber,
-                    moduleTitle: item.data.moduleTitle,
-                    questionIndex: item.data.questionIndex,
-                    question: item.data.question,
-                    answer: item.data.answer,
-                    timestamp: timestamp,
-                    characterCount: item.data.characterCount || item.data.answer?.length || 0
-                };
+        // Primeiro, agrupar todos os dados por sessionId
+        const sessionGroups = {};
+        allData.forEach((item, index) => {
+            try {
+                if (!item || !item.data || !item.data.sessionId) {
+                    console.warn(`Item ${index} inválido:`, item);
+                    return;
+                }
+                
+                const sessionId = item.data.sessionId;
+                if (!sessionGroups[sessionId]) {
+                    sessionGroups[sessionId] = [];
+                }
+                sessionGroups[sessionId].push(item);
+            } catch (itemError) {
+                console.error(`Erro ao processar item ${index}:`, itemError, item);
             }
         });
         
-        // Organizar respostas por módulo
-        Object.values(uniqueAnswers).forEach(answer => {
-            if (!session.modules[answer.moduleNumber]) {
-                session.modules[answer.moduleNumber] = {
-                    title: answer.moduleTitle,
-                    answers: []
+        console.log('Sessions agrupadas:', Object.keys(sessionGroups).length);
+        
+        // Processar cada sessão
+        Object.entries(sessionGroups).forEach(([sessionId, items]) => {
+            try {
+                sdrData[sessionId] = {
+                    sessionId: sessionId,
+                    sdrName: '',
+                    sdrEmail: '',
+                    startTime: null,
+                    status: 'ativo',
+                    progress: 0,
+                    completedModules: 0,
+                    modules: {}
                 };
+                
+                const session = sdrData[sessionId];
+                
+                // Separar itens por tipo
+                const sessionStart = items.find(item => item.type === 'session_start');
+                const answers = items.filter(item => item.type === 'answer');
+                const progressItems = items.filter(item => item.type === 'progress');
+                const completedItems = items.filter(item => item.type === 'training_completed');
+                const pausedItems = items.filter(item => item.type === 'session_pause');
+                
+                // Processar dados da sessão
+                if (sessionStart && sessionStart.data) {
+                    session.sdrName = sessionStart.data.sdrName || 'Nome não informado';
+                    session.sdrEmail = sessionStart.data.sdrEmail || 'Email não informado';
+                    session.startTime = sessionStart.data.startTime;
+                }
+                
+                // Processar progresso (pegar o mais recente)
+                if (progressItems.length > 0) {
+                    const latestProgress = progressItems.sort((a, b) => {
+                        const dateA = new Date(a.timestamp?.seconds * 1000 || a.timestamp || 0);
+                        const dateB = new Date(b.timestamp?.seconds * 1000 || b.timestamp || 0);
+                        return dateB - dateA;
+                    })[0];
+                    
+                    if (latestProgress && latestProgress.data) {
+                        session.progress = latestProgress.data.progress || 0;
+                        session.completedModules = latestProgress.data.completedModules || 0;
+                    }
+                }
+                
+                // Processar status
+                if (completedItems.length > 0) {
+                    session.status = 'concluído';
+                } else if (pausedItems.length > 0) {
+                    session.status = 'pausado';
+                }
+                
+                // Processar respostas - pegar apenas a mais recente de cada pergunta
+                const uniqueAnswers = {};
+                answers.forEach(item => {
+                    try {
+                        if (!item.data || 
+                            item.data.moduleNumber === undefined || 
+                            item.data.questionIndex === undefined) {
+                            return;
+                        }
+                        
+                        const key = `${item.data.moduleNumber}_${item.data.questionIndex}`;
+                        const timestamp = new Date(item.data.timestamp?.seconds * 1000 || item.data.timestamp || 0);
+                        
+                        if (!uniqueAnswers[key] || timestamp > uniqueAnswers[key].timestamp) {
+                            uniqueAnswers[key] = {
+                                moduleNumber: item.data.moduleNumber,
+                                moduleTitle: item.data.moduleTitle || 'Módulo sem título',
+                                questionIndex: item.data.questionIndex,
+                                question: item.data.question || 'Pergunta não disponível',
+                                answer: item.data.answer || 'Resposta não disponível',
+                                timestamp: timestamp,
+                                characterCount: item.data.characterCount || item.data.answer?.length || 0
+                            };
+                        }
+                    } catch (answerError) {
+                        console.error('Erro ao processar resposta:', answerError, item);
+                    }
+                });
+                
+                // Organizar respostas por módulo
+                Object.values(uniqueAnswers).forEach(answer => {
+                    if (!session.modules[answer.moduleNumber]) {
+                        session.modules[answer.moduleNumber] = {
+                            title: answer.moduleTitle,
+                            answers: []
+                        };
+                    }
+                    
+                    session.modules[answer.moduleNumber].answers.push({
+                        questionIndex: answer.questionIndex,
+                        question: answer.question,
+                        answer: answer.answer,
+                        timestamp: answer.timestamp,
+                        characterCount: answer.characterCount
+                    });
+                });
+                
+                // Ordenar respostas por questionIndex em cada módulo
+                Object.values(session.modules).forEach(module => {
+                    if (module.answers && Array.isArray(module.answers)) {
+                        module.answers.sort((a, b) => (a.questionIndex || 0) - (b.questionIndex || 0));
+                    }
+                });
+                
+            } catch (sessionError) {
+                console.error(`Erro ao processar sessão ${sessionId}:`, sessionError);
             }
-            
-            session.modules[answer.moduleNumber].answers.push({
-                questionIndex: answer.questionIndex,
-                question: answer.question,
-                answer: answer.answer,
-                timestamp: answer.timestamp,
-                characterCount: answer.characterCount
-            });
         });
         
-        // Ordenar respostas por questionIndex em cada módulo
-        Object.values(session.modules).forEach(module => {
-            module.answers.sort((a, b) => a.questionIndex - b.questionIndex);
-        });
-    });
-    
-    console.log('Dados processados:', sdrData);
+        console.log('Processamento concluído. Sessions processadas:', Object.keys(sdrData).length);
+        console.log('Dados finais:', sdrData);
+        
+    } catch (error) {
+        console.error('Erro crítico no processamento de dados:', error);
+        sdrData = {};
+    }
 }
 
 // Renderizar lista de SDRs
@@ -778,14 +879,68 @@ function toggleAnswers(sessionId) {
     }
 }
 
-// Atualizar estatísticas
+// Atualizar estatísticas com tratamento de erro
 function updateStats() {
-    const sessions = Object.values(sdrData);
-    
-    document.getElementById('totalSDRs').textContent = sessions.length;
-    document.getElementById('activeSessions').textContent = sessions.filter(s => s.status === 'ativo').length;
-    document.getElementById('completedTrainings').textContent = sessions.filter(s => s.status === 'concluído').length;
-    document.getElementById('totalAnswers').textContent = sessions.reduce((total, s) => total + s.answers.length, 0);
+    try {
+        console.log('Atualizando estatísticas. SDR Data:', sdrData);
+        
+        // Verificar se sdrData existe e tem dados
+        if (!sdrData || typeof sdrData !== 'object') {
+            console.warn('sdrData não definido ou inválido');
+            document.getElementById('totalSDRs').textContent = '0';
+            document.getElementById('activeSessions').textContent = '0';
+            document.getElementById('completedTrainings').textContent = '0';
+            document.getElementById('totalAnswers').textContent = '0';
+            return;
+        }
+        
+        const sessions = Object.values(sdrData);
+        console.log('Sessions para estatísticas:', sessions.length);
+        
+        // Calcular estatísticas com verificações de segurança
+        const totalSDRs = sessions.length;
+        
+        const activeSessions = sessions.filter(s => {
+            return s && s.status && s.status === 'ativo';
+        }).length;
+        
+        const completedTrainings = sessions.filter(s => {
+            return s && s.status && s.status === 'concluído';
+        }).length;
+        
+        const totalAnswers = sessions.reduce((total, s) => {
+            if (!s || !s.modules) return total;
+            
+            const moduleAnswers = Object.values(s.modules).reduce((moduleTotal, module) => {
+                if (!module || !module.answers || !Array.isArray(module.answers)) return moduleTotal;
+                return moduleTotal + module.answers.length;
+            }, 0);
+            
+            return total + moduleAnswers;
+        }, 0);
+        
+        // Atualizar interface
+        document.getElementById('totalSDRs').textContent = totalSDRs;
+        document.getElementById('activeSessions').textContent = activeSessions;
+        document.getElementById('completedTrainings').textContent = completedTrainings;
+        document.getElementById('totalAnswers').textContent = totalAnswers;
+        
+        console.log('Estatísticas atualizadas:', {
+            totalSDRs,
+            activeSessions,
+            completedTrainings,
+            totalAnswers
+        });
+        
+    } catch (error) {
+        console.error('Erro ao atualizar estatísticas:', error);
+        
+        // Definir valores padrão em caso de erro
+        document.getElementById('totalSDRs').textContent = '0';
+        document.getElementById('activeSessions').textContent = '0';
+        document.getElementById('completedTrainings').textContent = '0';
+        document.getElementById('totalAnswers').textContent = '0';
+    }
 }
 
 // Aplicar filtros
