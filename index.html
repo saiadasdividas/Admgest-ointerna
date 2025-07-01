@@ -632,14 +632,31 @@ function processData() {
                 break;
                 
             case 'answer':
-                session.answers.push({
-                    moduleNumber: item.data.moduleNumber,
-                    moduleTitle: item.data.moduleTitle,
-                    question: item.data.question,
-                    answer: item.data.answer,
-                    timestamp: item.data.timestamp
-                });
+                // Evitar duplicatas usando um ID único
+                const answerId = `${item.data.moduleNumber}_${item.data.questionIndex}`;
                 
+                // Verificar se já existe esta resposta
+                const existingAnswer = session.answers.find(ans => 
+                    ans.moduleNumber === item.data.moduleNumber && 
+                    ans.questionIndex === item.data.questionIndex
+                );
+                
+                if (!existingAnswer) {
+                    session.answers.push({
+                        moduleNumber: item.data.moduleNumber,
+                        moduleTitle: item.data.moduleTitle,
+                        question: item.data.question,
+                        answer: item.data.answer,
+                        timestamp: item.data.timestamp,
+                        questionIndex: item.data.questionIndex
+                    });
+                } else {
+                    // Atualizar com a resposta mais recente
+                    existingAnswer.answer = item.data.answer;
+                    existingAnswer.timestamp = item.data.timestamp;
+                }
+                
+                // Organizar por módulos
                 if (!session.modules[item.data.moduleNumber]) {
                     session.modules[item.data.moduleNumber] = {
                         title: item.data.moduleTitle,
@@ -647,11 +664,23 @@ function processData() {
                     };
                 }
                 
-                session.modules[item.data.moduleNumber].answers.push({
-                    question: item.data.question,
-                    answer: item.data.answer,
-                    timestamp: item.data.timestamp
-                });
+                // Verificar se já existe no módulo
+                const existingModuleAnswer = session.modules[item.data.moduleNumber].answers.find(ans => 
+                    ans.questionIndex === item.data.questionIndex
+                );
+                
+                if (!existingModuleAnswer) {
+                    session.modules[item.data.moduleNumber].answers.push({
+                        question: item.data.question,
+                        answer: item.data.answer,
+                        timestamp: item.data.timestamp,
+                        questionIndex: item.data.questionIndex
+                    });
+                } else {
+                    // Atualizar com a resposta mais recente
+                    existingModuleAnswer.answer = item.data.answer;
+                    existingModuleAnswer.timestamp = item.data.timestamp;
+                }
                 break;
                 
             case 'progress':
@@ -667,6 +696,13 @@ function processData() {
                 session.status = 'pausado';
                 break;
         }
+    });
+    
+    // Ordenar respostas por questionIndex em cada módulo
+    Object.values(sdrData).forEach(session => {
+        Object.values(session.modules).forEach(module => {
+            module.answers.sort((a, b) => a.questionIndex - b.questionIndex);
+        });
     });
 }
 
@@ -730,54 +766,59 @@ function renderSDRList() {
     });
 }
 
-// Renderizar respostas
+// Renderizar respostas em formato de cards
 function renderAnswers(session) {
     if (Object.keys(session.modules).length === 0) {
         return '<div class="no-data">Nenhuma resposta ainda</div>';
     }
     
-    return Object.entries(session.modules).map(([moduleNum, module]) => {
-        const moduleAnswers = module.answers.map((answer, index) => {
-            const timestamp = answer.timestamp ? new Date(answer.timestamp.seconds ? answer.timestamp.seconds * 1000 : answer.timestamp).toLocaleString('pt-BR') : 'N/A';
-            const answerLength = answer.answer.length;
-            const isLongAnswer = answerLength > 200;
-            const answerPreview = isLongAnswer ? answer.answer.substring(0, 200) + '...' : answer.answer;
+    return Object.entries(session.modules)
+        .sort(([a], [b]) => parseInt(a) - parseInt(b)) // Ordenar módulos por número
+        .map(([moduleNum, module]) => {
+            const moduleAnswers = module.answers.map((answer, index) => {
+                const timestamp = answer.timestamp ? new Date(answer.timestamp.seconds ? answer.timestamp.seconds * 1000 : answer.timestamp).toLocaleString('pt-BR') : 'N/A';
+                const answerLength = answer.answer.length;
+                const quality = answerLength >= 200 ? 'Excelente' : answerLength >= 100 ? 'Boa' : 'Precisa melhorar';
+                const qualityColor = answerLength >= 200 ? '#059669' : answerLength >= 100 ? '#d97706' : '#dc2626';
+                
+                return `
+                    <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid ${qualityColor};">
+                        <!-- Pergunta -->
+                        <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid #3b82f6;">
+                            <h5 style="color: #1e40af; margin: 0 0 5px 0; font-size: 0.9rem; font-weight: bold;">❓ PERGUNTA:</h5>
+                            <p style="color: #1e3a8a; margin: 0; font-weight: 500; line-height: 1.4;">${answer.question}</p>
+                        </div>
+                        
+                        <!-- Resposta -->
+                        <div style="margin-bottom: 15px;">
+                            <h5 style="color: #059669; margin: 0 0 10px 0; font-size: 0.9rem; font-weight: bold;">✅ RESPOSTA:</h5>
+                            <div style="background: #f9fafb; padding: 15px; border-radius: 8px; border-left: 3px solid ${qualityColor};">
+                                <p style="color: #374151; margin: 0; line-height: 1.6; white-space: pre-wrap; font-size: 0.95rem;">${answer.answer}</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Metadados -->
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 15px; border-top: 1px solid #e5e7eb; font-size: 0.85rem; color: #6b7280;">
+                            <span>📅 ${timestamp}</span>
+                            <span>📝 ${answerLength} caracteres</span>
+                            <span style="color: ${qualityColor}; font-weight: bold;">⭐ ${quality}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
             
             return `
-                <div class="answer-item">
-                    <div class="question-text">${answer.question}</div>
-                    <div class="answer-text ${isLongAnswer ? 'collapsed' : ''}" id="answer-${moduleNum}-${index}">
-                        ${isLongAnswer ? answerPreview : answer.answer}
+                <div style="margin-bottom: 25px;">
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px 12px 0 0; margin-bottom: 0;">
+                        <h4 style="margin: 0; font-size: 1.1rem; font-weight: bold;">${module.title}</h4>
+                        <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9rem;">${module.answers.length} resposta(s) • Módulo ${moduleNum}</p>
                     </div>
-                    ${isLongAnswer ? `
-                        <button class="expand-answer-btn" onclick="toggleAnswerExpansion('${moduleNum}', '${index}', this)">
-                            Ver resposta completa
-                        </button>
-                    ` : ''}
-                    <div class="answer-meta">
-                        <span>📅 ${timestamp}</span>
-                        <span>📝 ${answerLength} caracteres</span>
-                        <span>⭐ ${answerLength >= 200 ? 'Completa' : answerLength >= 100 ? 'Média' : 'Curta'}</span>
+                    <div style="background: #f8fafc; padding: 20px; border-radius: 0 0 12px 12px; border: 1px solid #e2e8f0; border-top: none;">
+                        ${moduleAnswers}
                     </div>
                 </div>
             `;
         }).join('');
-        
-        return `
-            <div class="module-group">
-                <div class="module-header" onclick="toggleModuleAnswers('${moduleNum}')">
-                    <div class="module-title">${module.title}</div>
-                    <div class="module-meta">
-                        ${module.answers.length} resposta(s) • 
-                        Clique para ${document.getElementById(`module-answers-${moduleNum}`)?.classList.contains('expanded') ? 'ocultar' : 'expandir'}
-                    </div>
-                </div>
-                <div class="module-answers" id="module-answers-${moduleNum}">
-                    ${moduleAnswers}
-                </div>
-            </div>
-        `;
-    }).join('');
 }
 
 // Toggle respostas
