@@ -496,7 +496,7 @@ const db = firebase.firestore();
 // Variáveis globais
 let allData = [];
 let sdrData = {};
-const ADMIN_PASSWORD = "Conceito2024@"; // Altere para sua senha
+const ADMIN_PASSWORD = "admin123"; // Altere para sua senha
 
 // Login Admin
 function loginAdmin() {
@@ -627,8 +627,8 @@ function renderSDRList() {
         
         return `
             <div class="sdr-item" data-session="${session.sessionId}">
-                <div class="sdr-header" onclick="toggleAnswers('${session.sessionId}')">
-                    <div class="sdr-info">
+                <div class="sdr-header">
+                    <div class="sdr-info" onclick="toggleAnswers('${session.sessionId}')">
                         <div class="sdr-avatar">${initials}</div>
                         <div class="sdr-details">
                             <h3>${session.sdrName}</h3>
@@ -644,11 +644,11 @@ function renderSDRList() {
                         <div class="status-badge status-${session.status === 'concluído' ? 'completed' : session.status === 'pausado' ? 'paused' : 'active'}">
                             ${session.status}
                         </div>
-                        <button class="btn" onclick="event.stopPropagation(); openDeleteModal('${session.sessionId}')" 
+                        <button class="btn delete-btn" data-session="${session.sessionId}" 
                                 style="background: #dc2626; padding: 8px 12px; font-size: 12px; margin-left: 10px;">
                             🗑️ Excluir
                         </button>
-                        <button class="expand-btn">▼</button>
+                        <button class="expand-btn" onclick="toggleAnswers('${session.sessionId}')">▼</button>
                     </div>
                 </div>
                 <div class="sdr-answers" id="answers-${session.sessionId}">
@@ -659,6 +659,16 @@ function renderSDRList() {
     }).join('');
     
     sdrListEl.innerHTML = html;
+    
+    // Adicionar event listeners para botões de exclusão
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const sessionId = this.getAttribute('data-session');
+            console.log('Botão de exclusão clicado para:', sessionId);
+            openDeleteModal(sessionId);
+        });
+    });
 }
 
 // Renderizar respostas
@@ -697,8 +707,14 @@ function renderAnswers(session) {
 
 // Toggle respostas
 function toggleAnswers(sessionId) {
+    console.log('toggleAnswers chamada para:', sessionId);
     const answersEl = document.getElementById(`answers-${sessionId}`);
     const expandBtn = document.querySelector(`[data-session="${sessionId}"] .expand-btn`);
+    
+    if (!answersEl || !expandBtn) {
+        console.error('Elementos não encontrados para sessionId:', sessionId);
+        return;
+    }
     
     if (answersEl.classList.contains('expanded')) {
         answersEl.classList.remove('expanded');
@@ -788,13 +804,19 @@ let sessionToDelete = null;
 
 // Abrir modal de exclusão
 function openDeleteModal(sessionId) {
+    console.log('openDeleteModal chamada com sessionId:', sessionId);
     const session = sdrData[sessionId];
-    if (!session) return;
+    if (!session) {
+        console.error('Sessão não encontrada:', sessionId);
+        alert('Erro: Sessão não encontrada');
+        return;
+    }
     
     sessionToDelete = sessionId;
     document.getElementById('deleteSDRName').textContent = session.sdrName;
     document.getElementById('deleteSDREmail').textContent = session.sdrEmail;
     document.getElementById('deleteModal').style.display = 'block';
+    console.log('Modal de exclusão aberto para:', session.sdrName);
 }
 
 // Fechar modal de exclusão
